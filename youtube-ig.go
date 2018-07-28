@@ -19,7 +19,7 @@ import (
 
 var checkPre = color.Yellow("[") + color.Green("✓") + color.Yellow("]") + color.Yellow("[")
 
-func processWordResult(word string, page int, file *os.File) int {
+func processWordResult(word string, page int) int {
 	res, err := http.Get("https://www.youtube.com/results?search_query=" + word + "&gl=US&hl=en&disable_polymer=true&page=" + string(page))
 	if err != nil {
 		color.Println(color.Yellow("[") + color.Red("!") + color.Yellow("]") + color.Yellow("[") + color.Cyan(word) + color.Yellow("]") + color.Red(" No result for word: ") + color.Yellow(word))
@@ -42,6 +42,13 @@ func processWordResult(word string, page int, file *os.File) int {
 		runtime.Goexit()
 		return 84
 	}
+	// open file
+	file, err := os.OpenFile("ids.txt", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	defer file.Close()
 	// get IDs
 	document.Find("a").Each(func(i int, s *goquery.Selection) {
 		if name, _ := s.Attr("dir"); name == "ltr" {
@@ -57,19 +64,19 @@ func processWordResult(word string, page int, file *os.File) int {
 	return 0
 }
 
-func processWord(word string, wg *sync.WaitGroup, file *os.File) {
+func processWord(word string, wg *sync.WaitGroup) {
 	defer wg.Done()
 	var page = 1
 	for i := 1; i != 84; page++ {
 		time.Sleep(1 * time.Second)
-		if processWordResult(word, page, file) == 84 {
+		if processWordResult(word, page) == 84 {
 			i = 84
 			runtime.Goexit()
 		}
 	}
 }
 
-func readList(path string, file *os.File) {
+func readList(path string) {
 	// start workers group
 	var wg sync.WaitGroup
 	var count int
@@ -85,7 +92,7 @@ func readList(path string, file *os.File) {
 	for scanner.Scan() {
 		count++
 		wg.Add(1)
-		go processWord(scanner.Text(), &wg, file)
+		go processWord(scanner.Text(), &wg)
 		if count == 16 {
 			wg.Wait()
 			count = 0
@@ -100,13 +107,7 @@ func readList(path string, file *os.File) {
 
 func startGrabbing(args []string) {
 	if _, err := os.Stat(args[0]); err == nil {
-		file, err := os.OpenFile("ids.txt", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		defer file.Close()
-		readList(args[0], file)
+		readList(args[0])
 	} else {
 		fmt.Println("You need to provide a list as argument.")
 		os.Exit(1)
