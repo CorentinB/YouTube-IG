@@ -55,7 +55,7 @@ func processWordResult(word string, page int) int {
 			ID, _ := s.Attr("href")
 			if strings.Contains(ID, "/watch?v=") == true && len(ID) == 20 {
 				color.Println(checkPre + color.Cyan(word) + color.Yellow("] ") + color.Green("ID found: ") + color.Yellow(ID[9:]))
-				if _, err = file.WriteString(ID[9:]); err != nil {
+				if _, err = file.WriteString(ID[9:] + "\n"); err != nil {
 					panic(err)
 				}
 			}
