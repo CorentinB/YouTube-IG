@@ -19,33 +19,39 @@ import (
 
 var checkPre = color.Yellow("[") + color.Green("✓") + color.Yellow("]") + color.Yellow("[")
 
-func appendID(path string, ID string, file *os.File) {
+func appendID(path string, ID string, file *os.File, worker *sync.WaitGroup) {
+	defer worker.Done()
+	found := 0
 	// scan the list line by line
 	scanner := bufio.NewScanner(file)
 	// scan the list line by line
 	for scanner.Scan() {
 		if scanner.Text() == ID {
-			runtime.Goexit()
+			found = 1
 		}
 	}
 	// log if error
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatal(err)
+	if found == 0 {
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if _, err := f.Write([]byte(ID + "\n")); err != nil {
+			log.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println(checkPre + color.Cyan(ID) + color.Yellow("]") + color.Green(" Added to the list!"))
 	}
-	if _, err := f.Write([]byte(ID + "\n")); err != nil {
-		log.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(checkPre + color.Cyan(ID) + color.Yellow("]") + color.Green(" Added to the list!"))
 }
 
 func grabSuggest(path string, ID string, file *os.File) {
+	// start workers group
+	var wg sync.WaitGroup
 	// request video html page
 	html, err := http.Get("http://youtube.com/watch?v=" + ID + "&gl=US&hl=en&has_verified=1&bpctr=9999999999")
 	if err != nil {
@@ -64,7 +70,9 @@ func grabSuggest(path string, ID string, file *os.File) {
 	document.Find("span").Each(func(i int, s *goquery.Selection) {
 		if name, _ := s.Attr("class"); name == "yt-uix-simple-thumb-wrap yt-uix-simple-thumb-related" {
 			videoID, _ := s.Attr("data-vid")
-			appendID(path, videoID, file)
+			wg.Add(1)
+			go appendID(path, videoID, file, &wg)
+			wg.Wait()
 		}
 	})
 }
