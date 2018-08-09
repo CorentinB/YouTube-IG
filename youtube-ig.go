@@ -46,6 +46,7 @@ func appendID(path string, ID string, file *os.File, worker *sync.WaitGroup) {
 			log.Fatal(err)
 		}
 		fmt.Println(checkPre + color.Cyan(ID) + color.Yellow("]") + color.Green(" Added to the list!"))
+		f.Close()
 	}
 }
 
