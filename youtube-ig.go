@@ -54,7 +54,16 @@ func grabSuggest(path string, ID string, file *os.File) {
 	// start workers group
 	var wg sync.WaitGroup
 	// request video html page
-	html, err := http.Get("http://youtube.com/watch?v=" + ID + "&gl=US&hl=en&has_verified=1&bpctr=9999999999")
+
+	req, err := http.NewRequest("GET", "http://youtube.com/watch?v="+ID+"&gl=US&hl=en&has_verified=1&bpctr=9999999999", nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "http.request error for %s: %s", ID, err)
+		runtime.Goexit()
+	}
+	req.Header.Set("Connection", "close")
+	req.Close = true
+	html, err := http.DefaultClient.Do(req)
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		runtime.Goexit()
