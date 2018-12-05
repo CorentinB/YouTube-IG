@@ -22,10 +22,6 @@ var checkPre = color.Yellow("[") + color.Green("✓") + color.Yellow("]") + colo
 
 func appendID(path string, ID string, file *os.File, worker *sync.WaitGroup, client *redis.Client) {
 	defer worker.Done()
-	err := client.SAdd("ids", ID, 0).Err()
-	if err != nil {
-		panic(err)
-	}
 	found := 0
 	// scan the list line by line
 	scanner := bufio.NewScanner(file)
@@ -50,7 +46,8 @@ func appendID(path string, ID string, file *os.File, worker *sync.WaitGroup, cli
 		if err := f.Close(); err != nil {
 			log.Fatal(err)
 		}
-		if client.ZRank("ids", ID) == nil {
+		exist, err := client.SIsMember("ids", ID).Result()
+		if exist == false {
 			err = client.SAdd("ids", ID, 0).Err()
 			if err != nil {
 				log.Fatal(err)
@@ -148,9 +145,9 @@ func argumentParsing(args []string) {
 		Password: args[3],
 		DB:       int(dbID),
 	})
-
 	pong, err := client.Ping().Result()
 	if pong != "PONG" {
+	   	fmt.Println("Unable to connect to Redis DB")
 		log.Fatal(err)
 		os.Exit(1)
 	}
@@ -160,10 +157,10 @@ func argumentParsing(args []string) {
 	var maxConc int64
 	maxConc = 16
 	wg.Add(1)
-	if len(args) > 2 {
+	if len(args) > 5 {
 		color.Red("Usage: ./youtube-ig [list of IDs] [CONCURRENCY] [REDIS-HOST] [REDIS-PASSWORD] [REDIS-DB]")
 		os.Exit(1)
-	} else if len(args) == 2 {
+	} else if len(args) == 5 {
 		if _, err := strconv.ParseInt(args[1], 10, 64); err == nil {
 			maxConc, _ = strconv.ParseInt(args[1], 10, 64)
 		} else {
