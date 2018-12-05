@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"io/ioutil"
@@ -20,46 +19,20 @@ import (
 
 var checkPre = color.Yellow("[") + color.Green("✓") + color.Yellow("]") + color.Yellow("[")
 
-func appendID(path string, ID string, file *os.File, worker *sync.WaitGroup, client *redis.Client) {
+func appendID(ID string, worker *sync.WaitGroup, client *redis.Client) {
 	defer worker.Done()
-	found := 0
-	// scan the list line by line
-	scanner := bufio.NewScanner(file)
-	// scan the list line by line
-	for scanner.Scan() {
-		if scanner.Text() == ID {
-			found = 1
-		}
-	}
-	// log if error
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
-	}
-	if found == 0 {
-		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	exist, err := client.SIsMember("ids", ID).Result()
+	if exist == false {
+		err = client.SAdd("ids", ID, 0).Err()
 		if err != nil {
 			log.Fatal(err)
+		} else {
+			fmt.Println(checkPre + color.Cyan(ID) + color.Yellow("]") + color.Green(" Added to the DB!"))
 		}
-		if _, err := f.Write([]byte(ID + "\n")); err != nil {
-			log.Fatal(err)
-		}
-		if err := f.Close(); err != nil {
-			log.Fatal(err)
-		}
-		exist, err := client.SIsMember("ids", ID).Result()
-		if exist == false {
-			err = client.SAdd("ids", ID, 0).Err()
-			if err != nil {
-				log.Fatal(err)
-			} else {
-				fmt.Println(checkPre + color.Cyan(ID) + color.Yellow("]") + color.Green(" Added to the DB!"))
-			}
-		}
-		f.Close()
 	}
 }
 
-func grabSuggest(path string, ID string, file *os.File, client *redis.Client) {
+func grabSuggest(ID string, client *redis.Client) {
 	// start workers group
 	var wg sync.WaitGroup
 	// request video html page
@@ -90,64 +63,67 @@ func grabSuggest(path string, ID string, file *os.File, client *redis.Client) {
 		if name, _ := s.Attr("class"); name == "yt-uix-simple-thumb-wrap yt-uix-simple-thumb-related" {
 			videoID, _ := s.Attr("data-vid")
 			wg.Add(1)
-			go appendID(path, videoID, file, &wg, client)
+			go appendID(videoID, &wg, client)
 			wg.Wait()
 		}
 	})
 }
 
-func processSingleID(path string, ID string, worker *sync.WaitGroup, file *os.File, client *redis.Client) {
+func processSingleID(ID string, worker *sync.WaitGroup, client *redis.Client) {
 	defer worker.Done()
-	grabSuggest(path, ID, file, client)
+	grabSuggest(ID, client)
 }
 
-func processList(maxConc int64, path string, client *redis.Client, worker *sync.WaitGroup) {
+func processList(maxConc int64, client *redis.Client, worker *sync.WaitGroup) {
 	defer worker.Done()
 	var count int64
 
 	// start workers group
 	var wg sync.WaitGroup
-
-	// open file
-	file, err := os.Open(path)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
+	var randomID string
 
 	// scan the list line by line
-	scanner := bufio.NewScanner(file)
-
-	// scan the list line by line
-	for scanner.Scan() {
+	for {
 		count++
+		nbElements, err := client.SCard("ids").Result()
+		if err != nil {
+			log.Fatal(err)
+		}
+		if int(nbElements) > 0 {
+			randomID, err = client.SRandMember("ids").Result()
+			if err != nil {
+				log.Fatal(err)
+			}
+		} else {
+			err = client.SAdd("ids", "rYs84rkOgOg", 0).Err()
+			if err != nil {
+				log.Fatal(err)
+			}
+			randomID = "rYs84rkOgOg"
+		}
 		wg.Add(1)
-		go processSingleID(path, scanner.Text(), &wg, file, client)
+		go processSingleID(randomID, &wg, client)
 		if count == maxConc {
 			wg.Wait()
 			count = 0
 		}
 	}
 
-	// log if error
-	if err := scanner.Err(); err != nil {
-		log.Fatal(err)
-	}
 	wg.Wait()
-	processList(maxConc, path, client, worker)
+	processList(maxConc, client, worker)
 }
 
 func argumentParsing(args []string) {
-	dbID, _ := strconv.ParseInt(args[4], 10, 64)
+	dbID, _ := strconv.ParseInt(args[3], 10, 64)
 	// Connect to Redis server
 	client := redis.NewClient(&redis.Options{
-		Addr:     args[2],
-		Password: args[3],
+		Addr:     args[1],
+		Password: args[2],
 		DB:       int(dbID),
 	})
 	pong, err := client.Ping().Result()
 	if pong != "PONG" {
-	   	fmt.Println("Unable to connect to Redis DB")
+		fmt.Println("Unable to connect to Redis DB")
 		log.Fatal(err)
 		os.Exit(1)
 	}
@@ -157,18 +133,18 @@ func argumentParsing(args []string) {
 	var maxConc int64
 	maxConc = 16
 	wg.Add(1)
-	if len(args) > 5 {
-		color.Red("Usage: ./youtube-ig [list of IDs] [CONCURRENCY] [REDIS-HOST] [REDIS-PASSWORD] [REDIS-DB]")
+	if len(args) > 4 {
+		color.Red("Usage: ./youtube-ig [CONCURRENCY] [REDIS-HOST] [REDIS-PASSWORD] [REDIS-DB]")
 		os.Exit(1)
-	} else if len(args) == 5 {
-		if _, err := strconv.ParseInt(args[1], 10, 64); err == nil {
-			maxConc, _ = strconv.ParseInt(args[1], 10, 64)
+	} else if len(args) == 4 {
+		if _, err := strconv.ParseInt(args[0], 10, 64); err == nil {
+			maxConc, _ = strconv.ParseInt(args[0], 10, 64)
 		} else {
-			color.Red("Usage: ./youtube-ig [list of IDs] [CONCURRENCY] [REDIS-HOST] [REDIS-PASSWORD] [REDIS-DB]")
+			color.Red("Usage: ./youtube-ig [CONCURRENCY] [REDIS-HOST] [REDIS-PASSWORD] [REDIS-DB]")
 			os.Exit(1)
 		}
 	}
-	go processList(maxConc, args[0], client, &wg)
+	go processList(maxConc, client, &wg)
 	wg.Wait()
 }
 
