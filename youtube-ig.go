@@ -14,13 +14,18 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/go-redis/redis"
 	"github.com/labstack/gommon/color"
 )
 
 var checkPre = color.Yellow("[") + color.Green("✓") + color.Yellow("]") + color.Yellow("[")
 
-func appendID(path string, ID string, file *os.File, worker *sync.WaitGroup) {
+func appendID(path string, ID string, file *os.File, worker *sync.WaitGroup, client *redis.Client) {
 	defer worker.Done()
+	err := client.SAdd("ids", ID, 0).Err()
+	if err != nil {
+		panic(err)
+	}
 	found := 0
 	// scan the list line by line
 	scanner := bufio.NewScanner(file)
@@ -45,12 +50,19 @@ func appendID(path string, ID string, file *os.File, worker *sync.WaitGroup) {
 		if err := f.Close(); err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println(checkPre + color.Cyan(ID) + color.Yellow("]") + color.Green(" Added to the list!"))
+		if client.ZRank("ids", ID) == nil {
+			err = client.SAdd("ids", ID, 0).Err()
+			if err != nil {
+				log.Fatal(err)
+			} else {
+				fmt.Println(checkPre + color.Cyan(ID) + color.Yellow("]") + color.Green(" Added to the DB!"))
+			}
+		}
 		f.Close()
 	}
 }
 
-func grabSuggest(path string, ID string, file *os.File) {
+func grabSuggest(path string, ID string, file *os.File, client *redis.Client) {
 	// start workers group
 	var wg sync.WaitGroup
 	// request video html page
@@ -81,66 +93,85 @@ func grabSuggest(path string, ID string, file *os.File) {
 		if name, _ := s.Attr("class"); name == "yt-uix-simple-thumb-wrap yt-uix-simple-thumb-related" {
 			videoID, _ := s.Attr("data-vid")
 			wg.Add(1)
-			go appendID(path, videoID, file, &wg)
+			go appendID(path, videoID, file, &wg, client)
 			wg.Wait()
 		}
 	})
 }
 
-func processSingleID(path string, ID string, worker *sync.WaitGroup, file *os.File) {
+func processSingleID(path string, ID string, worker *sync.WaitGroup, file *os.File, client *redis.Client) {
 	defer worker.Done()
-	grabSuggest(path, ID, file)
+	grabSuggest(path, ID, file, client)
 }
 
-func processList(maxConc int64, path string, worker *sync.WaitGroup) {
+func processList(maxConc int64, path string, client *redis.Client, worker *sync.WaitGroup) {
 	defer worker.Done()
 	var count int64
+
 	// start workers group
 	var wg sync.WaitGroup
+
 	// open file
 	file, err := os.Open(path)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer file.Close()
+
 	// scan the list line by line
 	scanner := bufio.NewScanner(file)
+
 	// scan the list line by line
 	for scanner.Scan() {
 		count++
 		wg.Add(1)
-		go processSingleID(path, scanner.Text(), &wg, file)
+		go processSingleID(path, scanner.Text(), &wg, file, client)
 		if count == maxConc {
 			wg.Wait()
 			count = 0
 		}
 	}
+
 	// log if error
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
 	wg.Wait()
-	processList(maxConc, path, worker)
+	processList(maxConc, path, client, worker)
 }
 
 func argumentParsing(args []string) {
-	// start workers group
+	dbID, _ := strconv.ParseInt(args[4], 10, 64)
+	// Connect to Redis server
+	client := redis.NewClient(&redis.Options{
+		Addr:     args[2],
+		Password: args[3],
+		DB:       int(dbID),
+	})
+
+	pong, err := client.Ping().Result()
+	if pong != "PONG" {
+		log.Fatal(err)
+		os.Exit(1)
+	}
+
+	// Start workers group
 	var wg sync.WaitGroup
 	var maxConc int64
 	maxConc = 16
 	wg.Add(1)
 	if len(args) > 2 {
-		color.Red("Usage: ./youtube-ig [list of IDs] [CONCURRENCY]")
+		color.Red("Usage: ./youtube-ig [list of IDs] [CONCURRENCY] [REDIS-HOST] [REDIS-PASSWORD] [REDIS-DB]")
 		os.Exit(1)
 	} else if len(args) == 2 {
 		if _, err := strconv.ParseInt(args[1], 10, 64); err == nil {
 			maxConc, _ = strconv.ParseInt(args[1], 10, 64)
 		} else {
-			color.Red("Usage: ./youtube-ig [list of IDs] [CONCURRENCY]")
+			color.Red("Usage: ./youtube-ig [list of IDs] [CONCURRENCY] [REDIS-HOST] [REDIS-PASSWORD] [REDIS-DB]")
 			os.Exit(1)
 		}
 	}
-	go processList(maxConc, args[0], &wg)
+	go processList(maxConc, args[0], client, &wg)
 	wg.Wait()
 }
 
