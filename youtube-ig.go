@@ -19,22 +19,27 @@ import (
 
 var checkPre = color.Yellow("[") + color.Green("✓") + color.Yellow("]") + color.Yellow("[")
 
-func appendID(ID string, worker *sync.WaitGroup, client *redis.Client) {
-	defer worker.Done()
-	exist, err := client.SIsMember("ids", ID).Result()
-	if exist == false {
-		err = client.SAdd("ids", ID, 0).Err()
+var pipeLength = 0
+
+func appendID(ID string, pipe redis.Pipeliner) {
+	err := pipe.SAdd("ids", ID, 0).Err()
+	if err != nil {
+		log.Fatal(err)
+	} else {
+		pipeLength++
+		fmt.Println(checkPre + color.Cyan(ID) + color.Yellow("]") + color.Green(" Added to the DB!"))
+	}
+	if pipeLength >= 1000 {
+		_, err = pipe.Exec()
 		if err != nil {
 			log.Fatal(err)
-		} else {
-			fmt.Println(checkPre + color.Cyan(ID) + color.Yellow("]") + color.Green(" Added to the DB!"))
 		}
+		pipeLength = 0
 	}
 }
 
-func grabSuggest(ID string, client *redis.Client) {
-	// start workers group
-	var wg sync.WaitGroup
+func grabSuggest(ID string, pipe redis.Pipeliner, worker *sync.WaitGroup) {
+	defer worker.Done()
 	// request video html page
 
 	req, err := http.NewRequest("GET", "http://youtube.com/watch?v="+ID+"&gl=US&hl=en&has_verified=1&bpctr=9999999999", nil)
@@ -62,27 +67,22 @@ func grabSuggest(ID string, client *redis.Client) {
 	document.Find("span").Each(func(i int, s *goquery.Selection) {
 		if name, _ := s.Attr("class"); name == "yt-uix-simple-thumb-wrap yt-uix-simple-thumb-related" {
 			videoID, _ := s.Attr("data-vid")
-			wg.Add(1)
-			go appendID(videoID, &wg, client)
-			wg.Wait()
+			go appendID(videoID, pipe)
 		}
 	})
 }
 
-func processSingleID(ID string, worker *sync.WaitGroup, client *redis.Client) {
-	defer worker.Done()
-	grabSuggest(ID, client)
-}
-
-func processList(maxConc int64, client *redis.Client, worker *sync.WaitGroup) {
-	defer worker.Done()
+func processList(maxConc int64, client *redis.Client) {
 	var count int64
 
-	// start workers group
+	// Start workers group
 	var wg sync.WaitGroup
 	var randomID string
 
-	// scan the list line by line
+	// Create Redis pipeline
+	pipe := client.Pipeline()
+
+	// Scan the list line by line
 	for {
 		count++
 		nbElements, err := client.SCard("ids").Result()
@@ -102,15 +102,12 @@ func processList(maxConc int64, client *redis.Client, worker *sync.WaitGroup) {
 			randomID = "rYs84rkOgOg"
 		}
 		wg.Add(1)
-		go processSingleID(randomID, &wg, client)
+		go grabSuggest(randomID, pipe, &wg)
 		if count == maxConc {
 			wg.Wait()
 			count = 0
 		}
 	}
-
-	wg.Wait()
-	processList(maxConc, client, worker)
 }
 
 func argumentParsing(args []string) {
@@ -128,11 +125,8 @@ func argumentParsing(args []string) {
 		os.Exit(1)
 	}
 
-	// Start workers group
-	var wg sync.WaitGroup
 	var maxConc int64
 	maxConc = 16
-	wg.Add(1)
 	if len(args) > 4 {
 		color.Red("Usage: ./youtube-ig [CONCURRENCY] [REDIS-HOST] [REDIS-PASSWORD] [REDIS-DB]")
 		os.Exit(1)
@@ -144,8 +138,7 @@ func argumentParsing(args []string) {
 			os.Exit(1)
 		}
 	}
-	go processList(maxConc, client, &wg)
-	wg.Wait()
+	processList(maxConc, client)
 }
 
 func main() {
