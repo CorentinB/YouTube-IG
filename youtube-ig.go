@@ -14,20 +14,32 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/go-redis/redis"
+	"github.com/gosuri/uilive"
 	"github.com/labstack/gommon/color"
 )
 
-var checkPre = color.Yellow("[") + color.Green("✓") + color.Yellow("]") + color.Yellow("[")
+var checkPre = color.Yellow("[") + color.Green("✓") + color.Yellow("]")
 
 var pipeLength = 0
 
+var writer = uilive.New()
+
+var added = 0
+
+var processed = 0
+
+var start = time.Now()
+
 func appendID(ID string, pipe redis.Pipeliner) {
-	err := pipe.SAdd("ids", ID, 0).Err()
+	processed++
+	result, err := pipe.SAdd("ids", ID, 0).Result()
 	if err != nil {
 		log.Fatal(err)
 	} else {
-		pipeLength++
-		fmt.Println(checkPre + color.Cyan(ID) + color.Yellow("]") + color.Green(" Added to the DB!"))
+		if result == 1 {
+			pipeLength++
+			added++
+		}
 	}
 	if pipeLength >= 1000 {
 		_, err = pipe.Exec()
@@ -82,13 +94,18 @@ func processList(maxConc int64, client *redis.Client) {
 	// Create Redis pipeline
 	pipe := client.Pipeline()
 
+	// Grab number of IDs
+	nbElements, err := client.SCard("ids").Result()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	writer.Start()
+	var averageTime, timeSince int64
+
 	// Scan the list line by line
 	for {
 		count++
-		nbElements, err := client.SCard("ids").Result()
-		if err != nil {
-			log.Fatal(err)
-		}
 		if int(nbElements) > 0 {
 			randomID, err = client.SRandMember("ids").Result()
 			if err != nil {
@@ -103,6 +120,25 @@ func processList(maxConc int64, client *redis.Client) {
 		}
 		wg.Add(1)
 		go grabSuggest(randomID, pipe, &wg)
+		timeSince = int64(time.Since(start)) / 1e9
+		if timeSince != 0 {
+			averageTime = int64(processed) / (int64(time.Since(start)) / 1e9)
+		}
+		fmt.Fprintln(writer, checkPre+
+			color.Yellow("[")+
+			color.Cyan(processed)+
+			color.Yellow(" IDs processed in ")+
+			color.Cyan(time.Since(start))+
+			color.Yellow("] ")+
+			color.Cyan(added)+
+			color.Green(" new IDs added to the DB! ")+
+			color.Yellow("[Processing ")+
+			color.Cyan(averageTime)+
+			color.Cyan(" IDs")+
+			color.Yellow("/")+
+			color.Cyan("s")+
+			color.Yellow("] "))
+
 		if count == maxConc {
 			wg.Wait()
 			count = 0
@@ -142,7 +178,6 @@ func argumentParsing(args []string) {
 }
 
 func main() {
-	start := time.Now()
 	argumentParsing(os.Args[1:])
 	color.Println(color.Cyan("Done in ") + color.Yellow(time.Since(start)) + color.Cyan("!"))
 }
