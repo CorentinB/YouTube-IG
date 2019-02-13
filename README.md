@@ -6,7 +6,7 @@
 
 # Usage
 
-First download the latest release from https://github.com/CorentinB/youtube-ma/releases
+First download the latest release from https://github.com/CorentinB/YouTube-IG/releases
 Extract it and make it executable with:
 ```
 chmod +x YouTube-IG
