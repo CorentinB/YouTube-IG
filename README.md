@@ -1,4 +1,5 @@
-[![forthebadge](https://forthebadge.com/images/badges/built-with-love.svg)][![forthebadge](https://forthebadge.com/images/badges/made-with-go.svg)]
+![forthebadge](https://forthebadge.com/images/badges/built-with-love.svg)
+![forthebadge](https://forthebadge.com/images/badges/made-with-go.svg)
 
 # YouTube-IG
 💾 Light and fast YouTube video IDs grabber.
