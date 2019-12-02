@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"runtime"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/labstack/gommon/color"
@@ -87,13 +88,13 @@ func grabSuggestion(worker *sizedwaitgroup.SizedWaitGroup) {
 
 	ID, err := getRandomID()
 	if err != nil {
-		return
+		runtime.Goexit()
 	}
 
 	req, err := http.NewRequest("GET", "http://youtube.com/watch?v="+ID+"&gl=US&hl=en&has_verified=1&bpctr=9999999999", nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "http.request error for %s: %s", ID, err)
-		return
+		runtime.Goexit()
 	}
 	req.Header.Set("Connection", "close")
 	req.Close = true
@@ -101,12 +102,12 @@ func grabSuggestion(worker *sizedwaitgroup.SizedWaitGroup) {
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return
+		runtime.Goexit()
 	}
 	// check status, exit if != 200
 	if html.StatusCode != 200 {
 		fmt.Fprintf(os.Stderr, "Status code error for %s: %d %s", ID, html.StatusCode, html.Status)
-		return
+		runtime.Goexit()
 	}
 	body, err := ioutil.ReadAll(html.Body)
 
@@ -124,7 +125,7 @@ func grabSuggestion(worker *sizedwaitgroup.SizedWaitGroup) {
 
 	err = pushIDs(videoIDs)
 	if err != nil {
-		return
+		runtime.Goexit()
 	}
 }
 
