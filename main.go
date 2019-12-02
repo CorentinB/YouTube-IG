@@ -46,12 +46,12 @@ func getJSON(url string, target interface{}) error {
 }
 
 func getRandomID() string {
-	rand.Seed(time.Now().Unix())
+	rand.Seed(time.Now().UnixNano())
 	IDs := new(GetIDs)
 
-	getJSON("https://youtube.the-eye.eu/api/admin/requests?secret="+arguments.Secret+"&limit=10000", IDs)
+	getJSON("https://youtube.the-eye.eu/api/admin/requests?secret="+arguments.Secret+"&limit=9999", IDs)
 
-	n := rand.Int() % len(IDs.Requests)
+	n := rand.Intn(len(IDs.Requests))
 
 	return IDs.Requests[n].VideoID
 }
@@ -65,7 +65,7 @@ func pushIDs(videoIDs []string) {
 	}
 	body := bytes.NewReader(payloadBytes)
 
-	req, err := http.NewRequest("POST", "https://ytma.frenchy.space/api/admin/requests", body)
+	req, err := http.NewRequest("POST", "https://youtube.the-eye.eu/api/admin/requests", body)
 	if err != nil {
 		// handle err
 	}
