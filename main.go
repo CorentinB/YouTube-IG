@@ -18,16 +18,11 @@ import (
 
 var checkPre = color.Yellow("[") + color.Green("✓") + color.Yellow("]") + color.Yellow("[")
 
-// GetIDs is for https://youtube.the-eye.eu/api/admin/requests?secret=SECRET&limit=10000
-type GetIDs struct {
-	Ok       bool   `json:"ok"`
-	Msg      string `json:"msg"`
-	Requests []struct {
-		ID         int         `json:"ID"`
-		VideoID    string      `json:"video_id"`
-		RawURL     string      `json:"raw_url"`
-		ArchivedAt interface{} `json:"archived_at"`
-	} `json:"requests"`
+// Seeds is for https://youtube.the-eye.eu/api/admin/seed?secret=SECRET
+type Seeds struct {
+	Ok    bool     `json:"ok"`
+	Msg   string   `json:"msg"`
+	Seeds []string `json:"seeds"`
 }
 
 // Payload to push DIs
@@ -47,13 +42,13 @@ func getJSON(url string, target interface{}) error {
 
 func getRandomID() string {
 	rand.Seed(time.Now().UnixNano())
-	IDs := new(GetIDs)
+	IDs := new(Seeds)
 
-	getJSON("https://youtube.the-eye.eu/api/admin/requests?secret="+arguments.Secret+"&limit=9999", IDs)
+	getJSON("https://youtube.the-eye.eu/api/admin/seed?secret="+arguments.Secret, IDs)
 
-	n := rand.Intn(len(IDs.Requests))
+	n := rand.Intn(len(IDs.Seeds))
 
-	return IDs.Requests[n].VideoID
+	return IDs.Seeds[n]
 }
 
 func pushIDs(videoIDs []string) {
