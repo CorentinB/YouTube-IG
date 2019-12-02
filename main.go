@@ -42,7 +42,7 @@ func getRandomID() string {
 	IDs := new(Seeds)
 
 	err := getJSON("https://youtube.the-eye.eu/api/admin/seed?secret="+arguments.Secret, IDs)
-	if err != nil {
+	if err != nil || len(IDs.Seeds) == 0 {
 		return getRandomID()
 	}
 
