@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"net/http"
 	"os"
 	"runtime"
-	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/labstack/gommon/color"
@@ -41,14 +39,11 @@ func getJSON(url string, target interface{}) error {
 }
 
 func getRandomID() string {
-	rand.Seed(time.Now().UnixNano())
 	IDs := new(Seeds)
 
 	getJSON("https://youtube.the-eye.eu/api/admin/seed?secret="+arguments.Secret, IDs)
 
-	n := rand.Intn(len(IDs.Seeds))
-
-	return IDs.Seeds[n]
+	return IDs.Seeds[0]
 }
 
 func pushIDs(videoIDs []string) {
