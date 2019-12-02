@@ -41,7 +41,10 @@ func getJSON(url string, target interface{}) error {
 func getRandomID() string {
 	IDs := new(Seeds)
 
-	getJSON("https://youtube.the-eye.eu/api/admin/seed?secret="+arguments.Secret, IDs)
+	err := getJSON("https://youtube.the-eye.eu/api/admin/seed?secret="+arguments.Secret, IDs)
+	if err != nil {
+		return getRandomID()
+	}
 
 	return IDs.Seeds[0]
 }
