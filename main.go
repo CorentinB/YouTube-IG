@@ -3,11 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
-	"runtime"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/labstack/gommon/color"
@@ -38,50 +38,62 @@ func getJSON(url string, target interface{}) error {
 	return json.NewDecoder(r.Body).Decode(target)
 }
 
-func getRandomID() string {
+func getRandomID() (ID string, err error) {
 	IDs := new(Seeds)
 
-	err := getJSON("https://youtube.the-eye.eu/api/admin/seed?secret="+arguments.Secret, IDs)
-	if err != nil || len(IDs.Seeds) == 0 {
-		return getRandomID()
+	err = getJSON("https://youtube.the-eye.eu/api/admin/seed?secret="+arguments.Secret, IDs)
+	if err != nil {
+		return ID, err
 	}
 
-	return IDs.Seeds[0]
+	if len(IDs.Seeds) < 1 {
+		err = errors.New("empty seeds")
+		return ID, err
+	}
+
+	ID = IDs.Seeds[0]
+
+	return ID, nil
 }
 
-func pushIDs(videoIDs []string) {
+func pushIDs(videoIDs []string) error {
 	data := new(Payload)
 	data.VideoIds = videoIDs
 	payloadBytes, err := json.Marshal(data)
 	if err != nil {
-		// handle err
+		return err
 	}
 	body := bytes.NewReader(payloadBytes)
 
 	req, err := http.NewRequest("POST", "https://youtube.the-eye.eu/api/admin/requests", body)
 	if err != nil {
-		// handle err
+		return err
 	}
 	req.Header.Set("X-Secret", arguments.Secret)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		// handle err
+		return err
 	}
 	defer resp.Body.Close()
+
+	return nil
 }
 
 func grabSuggestion(worker *sizedwaitgroup.SizedWaitGroup) {
 	defer worker.Done()
 	var videoIDs []string
 
-	ID := getRandomID()
+	ID, err := getRandomID()
+	if err != nil {
+		return
+	}
 
 	req, err := http.NewRequest("GET", "http://youtube.com/watch?v="+ID+"&gl=US&hl=en&has_verified=1&bpctr=9999999999", nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "http.request error for %s: %s", ID, err)
-		runtime.Goexit()
+		return
 	}
 	req.Header.Set("Connection", "close")
 	req.Close = true
@@ -89,12 +101,12 @@ func grabSuggestion(worker *sizedwaitgroup.SizedWaitGroup) {
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		runtime.Goexit()
+		return
 	}
 	// check status, exit if != 200
 	if html.StatusCode != 200 {
 		fmt.Fprintf(os.Stderr, "Status code error for %s: %d %s", ID, html.StatusCode, html.Status)
-		runtime.Goexit()
+		return
 	}
 	body, err := ioutil.ReadAll(html.Body)
 
@@ -110,7 +122,10 @@ func grabSuggestion(worker *sizedwaitgroup.SizedWaitGroup) {
 		}
 	})
 
-	pushIDs(videoIDs)
+	err = pushIDs(videoIDs)
+	if err != nil {
+		return
+	}
 }
 
 func crawl() {
